@@ -1,0 +1,10 @@
+{
+  //Annual interest rate in %
+  "AnnualInterestRate": 10.0,
+
+  //Allowed extensions: .csv, .xlxs
+  "inputFile": "aaa.xlsx",
+  "outputFile": "output.xlsx",
+
+  "OverwriteExistingFile": true
+}
