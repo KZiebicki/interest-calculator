@@ -1,9 +1,9 @@
 {
   //Annual interest rate in %
-  "AnnualInterestRate": 10.0,
+  "AnnualInterestRate": 513.8,
 
   //Allowed extensions: .csv, .xlxs
-  "inputFile": "aaa.xlsx",
+  "inputFile": "input.xlsx",
   "outputFile": "output.xlsx",
 
   "OverwriteExistingFile": true

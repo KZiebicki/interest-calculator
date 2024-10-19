@@ -1,110 +1,122 @@
 ﻿using Newtonsoft.Json;
 using OfficeOpenXml;
 
-public class Config
+namespace Calculator;
+
+public class Config(double annualInterestRate, bool overwriteExistingFile)
 {
-    public double AnnualInterestRate { get; set; }
-    public string? inputFile { get; set; }
-    public string? outputFile { get; set; }
-    public bool OverwriteExistingFile { get; set; }
+    public double AnnualInterestRate { get; } = annualInterestRate;
+    public string? InputFile { get; set; }
+    public string? OutputFile { get; set; }
+    public bool OverwriteExistingFile { get; } = overwriteExistingFile;
 
     public void Print()
     {
         Console.WriteLine("CONFIG:");
-        Console.WriteLine("- inputFile: " + inputFile);
-        Console.WriteLine("- outputFile: " + outputFile);
+        Console.WriteLine("- inputFile: " + InputFile);
+        Console.WriteLine("- outputFile: " + OutputFile);
         Console.WriteLine("- OverwriteExistingFile: " + OverwriteExistingFile);
         Console.WriteLine();
     }
 }
 
-public class InputModel
+/// <summary>
+/// Expects input file in Excel format containing a header describing columns:
+/// description, date, amount
+/// And a list of calculations below the header whereas each
+/// date indicates a start date for calculating monthly interests
+/// </summary>
+internal class InputModel
 {
-    public string Description { get; set; }
-    public DateTime Date { get; set; }
-    public double Amount { get; set; }
+    public string? Description { get; init; }
+    public DateTime Date { get; init; }
+    public double Amount { get; init; }
 }
 
-public class OutputModel
+internal class OutputModel(string date)
 {
-    public string Description { get; set; }
-    public string Date { get; set; }
-    public double Amount { get; set; }
+    public string? Description { get; init; }
+    public string Date { get; init; } = date;
+    public double Amount { get; init; }
 }
 
-class Program
+abstract class Program
 {
-    public static Config Config;
+    // TODO: must extend the system by reading interest rates from another file containing columns:
+    // Date, Interest - so that interest rates are effective from the specified date (inclusive)
+    // and the calculation must take into account every change of interest for each calculation
+    private static Config? _config;
+    
     static void Main(string[] args)
     {
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
-        Config = ReadConfig("config.json");
+        _config = ReadConfig("config.json");
 
-        if (string.IsNullOrEmpty(Config.inputFile))
+        if (string.IsNullOrEmpty(_config?.InputFile))
         {
             Console.Write("Nazwa pliku wejsciowego: ");
-            Config.inputFile = Console.ReadLine();
+            if (_config != null) _config.InputFile = Console.ReadLine();
         }
-        if (string.IsNullOrEmpty(Config.outputFile))
+        if (string.IsNullOrEmpty(_config?.OutputFile))
         {
             Console.Write("Nazwa pliku wyjściowego: ");
-            Config.outputFile = Console.ReadLine();
+            if (_config != null) _config.OutputFile = Console.ReadLine();
         }
 
-        Config.Print();
+        _config?.Print();
 
-        List<InputModel> data = ReadData(Config.inputFile);
-        List<OutputModel> results = CalculateInterest(data, Config.AnnualInterestRate / 100);
-        SaveData(Config.outputFile, results);
+        if (_config?.InputFile == null) return;
+        List<InputModel> data = ReadData(_config.InputFile);
+        List<OutputModel> results = CalculateInterest(data, _config.AnnualInterestRate / 100);
+        if (_config.OutputFile != null) SaveData(_config.OutputFile, results);
     }
 
-    static Config ReadConfig(string configPath)
+    private static Config? ReadConfig(string configPath)
     {
-        using (StreamReader reader = new StreamReader(configPath))
-        {
-            string json = reader.ReadToEnd();
-            return JsonConvert.DeserializeObject<Config>(json);
-        }
+        using StreamReader reader = new(configPath);
+        string json = reader.ReadToEnd();
+        return JsonConvert.DeserializeObject<Config>(json);
     }
 
-    static List<InputModel> ReadData(string filePath)
+    private static List<InputModel> ReadData(string filePath)
     {
-        var data = new List<InputModel>();
+        List<InputModel> data = [];
         string fileExtension = Path.GetExtension(filePath).ToLower();
 
-        if (fileExtension == ".csv")
+        switch (fileExtension)
         {
-            // Wczytaj dane z pliku CSV
-            using (var reader = new StreamReader(filePath))
+            case ".csv":
             {
-                var headerLine = reader.ReadLine(); // Skip header line
+                using StreamReader reader = new(filePath);
+                string? headerLine = reader.ReadLine(); // Skip header line
                 while (!reader.EndOfStream)
                 {
-                    var line = reader.ReadLine();
-                    var values = line.Split(';');
+                    string? line = reader.ReadLine();
+                    string?[]? values = line?.Split(';');
 
-                    var inputData = new InputModel
+                    InputModel inputData = new()
                     {
-                        Description = values[0],
-                        Date = DateTime.Parse(values[1]),
-                        Amount = double.Parse(values[2])
+                        Description = values?[0],
+                        Date = DateTime.Parse(values?[1]),
+                        Amount = double.Parse(values?[2])
                     };
                     data.Add(inputData);
                 }
+
+                break;
             }
-        }
-        else if (fileExtension == ".xlsx" || fileExtension == ".xls")
-        {
-            // Wczytaj dane z pliku Excel
-            using (var package = new ExcelPackage(new FileInfo(filePath)))
+            case ".xlsx":
+            case ".xls":
             {
-                var worksheet = package.Workbook.Worksheets[0];
+                // Wczytaj dane z pliku Excel
+                using ExcelPackage package = new(new FileInfo(filePath));
+                ExcelWorksheet? worksheet = package.Workbook.Worksheets[0];
                 int row = 2; // Start from the second row (assuming the first row is the header)
 
                 while (worksheet.Cells[row, 1].Value != null)
                 {
-                    var inputData = new InputModel
+                    InputModel inputData = new()
                     {
                         Description = worksheet.Cells[row, 1].Text,
                         Date = DateTime.Parse(worksheet.Cells[row, 2].Text),
@@ -113,11 +125,11 @@ class Program
                     data.Add(inputData);
                     row++;
                 }
+
+                break;
             }
-        }
-        else
-        {
-            throw new InvalidOperationException("Unsupported file type. Please use a .csv or .xlsx file.");
+            default:
+                throw new InvalidOperationException("Unsupported file type. Please use a .csv or .xlsx file.");
         }
 
         return data;
@@ -125,27 +137,26 @@ class Program
 
     static List<OutputModel> CalculateInterest(List<InputModel> data, double annualInterestRate)
     {
-        var results = new List<OutputModel>();
+        List<OutputModel> results = [];
         double dailyInterestRate = annualInterestRate / 365;
 
-        foreach (var entry in data)
+        foreach (InputModel entry in data)
         {
             double amount = entry.Amount;
             DateTime currentDate = entry.Date;
             DateTime presentDate = DateTime.Now;
 
-            while (currentDate.AddDays(30) < presentDate)
+            while (currentDate.AddMonths(1) < presentDate)
             {
-                DateTime nextDate = currentDate.AddDays(30);
+                DateTime nextDate = currentDate.AddMonths(1);
                 double numberOfDays = (nextDate - currentDate).TotalDays;
                 double accruedInterest = amount * dailyInterestRate * numberOfDays;
 
                 amount += accruedInterest;
 
-                results.Add(new OutputModel
+                results.Add(new OutputModel(nextDate.ToString("yyyy-MM-dd"))
                 {
                     Description = entry.Description,
-                    Date = nextDate.ToString("yyyy-MM-dd"),
                     Amount = Math.Round(amount, 2)
                 });
 
@@ -159,36 +170,37 @@ class Program
 
     static void SaveData(string filePath, List<OutputModel> wyniki)
     {
-        if (File.Exists(filePath) && !Config.OverwriteExistingFile)
+        if (File.Exists(filePath) && _config is { OverwriteExistingFile: false })
             filePath = filePath.Insert(filePath.LastIndexOf('.'), DateTime.Now.ToString("yyyy-MM-dd HH-MM-ss"));
-
-
+        
         string fileExtension = Path.GetExtension(filePath).ToLower();
 
-        if (fileExtension == ".csv")
+        switch (fileExtension)
         {
-            // Zapisz wyniki do pliku CSV
-            using (var writer = new StreamWriter(filePath))
+            case ".csv":
             {
+                // Zapisz wyniki do pliku CSV
+                using StreamWriter writer = new(filePath);
                 writer.WriteLine("Opis,Data,Kwota");
-                foreach (var wynik in wyniki)
+                foreach (OutputModel wynik in wyniki)
                 {
                     writer.WriteLine($"{wynik.Description},{wynik.Date},{wynik.Amount}");
                 }
+
+                break;
             }
-        }
-        else if (fileExtension == ".xlsx" || fileExtension == ".xls")
-        {
-            // Zapisz wyniki do pliku Excel
-            using (var package = new ExcelPackage())
+            case ".xlsx":
+            case ".xls":
             {
-                var worksheet = package.Workbook.Worksheets.Add("Wyniki");
+                // Zapisz wyniki do pliku Excel
+                using ExcelPackage package = new();
+                ExcelWorksheet? worksheet = package.Workbook.Worksheets.Add("Wyniki");
                 worksheet.Cells[1, 1].Value = "Opis";
                 worksheet.Cells[1, 2].Value = "Data";
                 worksheet.Cells[1, 3].Value = "Kwota";
 
                 int row = 2;
-                foreach (var wynik in wyniki)
+                foreach (OutputModel wynik in wyniki)
                 {
                     worksheet.Cells[row, 1].Value = wynik.Description;
                     worksheet.Cells[row, 2].Value = wynik.Date;
@@ -197,11 +209,11 @@ class Program
                 }
 
                 package.SaveAs(new FileInfo(filePath));
+
+                break;
             }
-        }
-        else
-        {
-            throw new InvalidOperationException("Unsupported file type. Please use a .csv or .xlsx file.");
+            default:
+                throw new InvalidOperationException("Unsupported file type. Please use a .csv or .xlsx file.");
         }
 
         Console.WriteLine("Wyniki zapisano w pliku: " + filePath);
