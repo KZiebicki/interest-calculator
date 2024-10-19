@@ -12,7 +12,7 @@ public class Config(double annualInterestRate, bool overwriteExistingFile)
 
     public void Print()
     {
-        Console.WriteLine("CONFIG:");
+        Console.WriteLine("configuration:");
         Console.WriteLine("- inputFile: " + InputFile);
         Console.WriteLine("- outputFile: " + OutputFile);
         Console.WriteLine("- OverwriteExistingFile: " + OverwriteExistingFile);
@@ -55,12 +55,12 @@ abstract class Program
 
         if (string.IsNullOrEmpty(_config?.InputFile))
         {
-            Console.Write("Nazwa pliku wejsciowego: ");
+            Console.Write("Input file name: ");
             if (_config != null) _config.InputFile = Console.ReadLine();
         }
         if (string.IsNullOrEmpty(_config?.OutputFile))
         {
-            Console.Write("Nazwa pliku wyjściowego: ");
+            Console.Write("Output file name: ");
             if (_config != null) _config.OutputFile = Console.ReadLine();
         }
 
@@ -168,7 +168,7 @@ abstract class Program
     }
 
 
-    static void SaveData(string filePath, List<OutputModel> wyniki)
+    static void SaveData(string filePath, List<OutputModel> results)
     {
         if (File.Exists(filePath) && _config is { OverwriteExistingFile: false })
             filePath = filePath.Insert(filePath.LastIndexOf('.'), DateTime.Now.ToString("yyyy-MM-dd HH-MM-ss"));
@@ -179,12 +179,11 @@ abstract class Program
         {
             case ".csv":
             {
-                // Zapisz wyniki do pliku CSV
                 using StreamWriter writer = new(filePath);
                 writer.WriteLine("Opis,Data,Kwota");
-                foreach (OutputModel wynik in wyniki)
+                foreach (OutputModel result in results)
                 {
-                    writer.WriteLine($"{wynik.Description},{wynik.Date},{wynik.Amount}");
+                    writer.WriteLine($"{result.Description},{result.Date},{result.Amount}");
                 }
 
                 break;
@@ -192,19 +191,18 @@ abstract class Program
             case ".xlsx":
             case ".xls":
             {
-                // Zapisz wyniki do pliku Excel
                 using ExcelPackage package = new();
-                ExcelWorksheet? worksheet = package.Workbook.Worksheets.Add("Wyniki");
+                ExcelWorksheet? worksheet = package.Workbook.Worksheets.Add("Result");
                 worksheet.Cells[1, 1].Value = "Opis";
                 worksheet.Cells[1, 2].Value = "Data";
                 worksheet.Cells[1, 3].Value = "Kwota";
 
                 int row = 2;
-                foreach (OutputModel wynik in wyniki)
+                foreach (OutputModel result in results)
                 {
-                    worksheet.Cells[row, 1].Value = wynik.Description;
-                    worksheet.Cells[row, 2].Value = wynik.Date;
-                    worksheet.Cells[row, 3].Value = wynik.Amount;
+                    worksheet.Cells[row, 1].Value = result.Description;
+                    worksheet.Cells[row, 2].Value = result.Date;
+                    worksheet.Cells[row, 3].Value = result.Amount;
                     row++;
                 }
 
@@ -216,6 +214,6 @@ abstract class Program
                 throw new InvalidOperationException("Unsupported file type. Please use a .csv or .xlsx file.");
         }
 
-        Console.WriteLine("Wyniki zapisano w pliku: " + filePath);
+        Console.WriteLine("Results saved in file: " + filePath);
     }
 }
