@@ -8,6 +8,7 @@ public class Config(double annualInterestRate, bool overwriteExistingFile)
     public double AnnualInterestRate { get; } = annualInterestRate;
     public string? InputFile { get; set; }
     public string? OutputFile { get; set; }
+    public string? InterestRatesFile { get; set; }
     public bool OverwriteExistingFile { get; } = overwriteExistingFile;
 
     public void Print()
@@ -16,6 +17,7 @@ public class Config(double annualInterestRate, bool overwriteExistingFile)
         Console.WriteLine("- inputFile: " + InputFile);
         Console.WriteLine("- outputFile: " + OutputFile);
         Console.WriteLine("- OverwriteExistingFile: " + OverwriteExistingFile);
+        Console.WriteLine("- InterestRatesFile: " + InterestRatesFile);
         Console.WriteLine();
     }
 }
@@ -40,11 +42,14 @@ internal class OutputModel(string date)
     public double Amount { get; init; }
 }
 
+internal class InterestModel
+{
+    public DateTime Date { get; init; }
+    public double Amount { get; init; }
+}
+
 abstract class Program
 {
-    // TODO: must extend the system by reading interest rates from another file containing columns:
-    // Date, Interest - so that interest rates are effective from the specified date (inclusive)
-    // and the calculation must take into account every change of interest for each calculation
     private static Config? _config;
     
     static void Main(string[] args)
@@ -68,8 +73,72 @@ abstract class Program
 
         if (_config?.InputFile == null) return;
         List<InputModel> data = ReadData(_config.InputFile);
-        List<OutputModel> results = CalculateInterest(data, _config.AnnualInterestRate / 100);
+
+        List<InterestModel>? interestRates = null;
+        if (_config.InterestRatesFile != null)
+            interestRates = ReadInterestRatesFromFile(_config.InterestRatesFile);
+
+        List<OutputModel> results = CalculateInterest(data, _config.AnnualInterestRate / 100, interestRates);
         if (_config.OutputFile != null) SaveData(_config.OutputFile, results);
+    }
+
+    private static List<InterestModel>? ReadInterestRatesFromFile(string inputFile)
+    {
+        if (!File.Exists(inputFile))
+        {
+            Console.WriteLine(inputFile + "nie istnieje. wykorzystywana będzie wartość podana w konfiguracji 'config.json': " + _config.AnnualInterestRate);
+            return null;
+        }
+
+        List<InterestModel> interestRates = new();
+        string fileExtension = Path.GetExtension(inputFile).ToLower();
+
+        if (fileExtension == ".csv")
+        {
+            // Wczytaj dane z pliku CSV
+            using (var reader = new StreamReader(inputFile))
+            {
+                var headerLine = reader.ReadLine(); // Skip header line
+                while (!reader.EndOfStream)
+                {
+                    var line = reader.ReadLine();
+                    var values = line.Split(';');
+
+                    interestRates.Add(new InterestModel
+                    {
+                        Date = DateTime.Parse(values[0]),
+                        Amount = double.Parse(values[1]) / 100
+                    });
+                }
+            }
+        }
+        else if (fileExtension == ".xlsx" || fileExtension == ".xls")
+        {
+            // Wczytaj dane z pliku Excel
+            using (var package = new ExcelPackage(new FileInfo(inputFile)))
+            {
+                var worksheet = package.Workbook.Worksheets[0];
+                int row = 2; // Start from the second row (assuming the first row is the header)
+
+                while (worksheet.Cells[row, 1].Value != null)
+                {
+                    interestRates.Add(new InterestModel
+                    {
+                        Date = DateTime.Parse(worksheet.Cells[row, 1].Text),
+                        Amount = double.Parse(worksheet.Cells[row, 2].Text) / 100
+                    });
+                    row++;
+                }
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException("Unsupported file type. Please use a .csv or .xlsx file.");
+        }
+
+        interestRates.Sort((a, b) => a.Date.CompareTo(b.Date));
+
+        return interestRates;
     }
 
     private static Config? ReadConfig(string configPath)
@@ -135,7 +204,7 @@ abstract class Program
         return data;
     }
 
-    static List<OutputModel> CalculateInterest(List<InputModel> data, double annualInterestRate)
+    static List<OutputModel> CalculateInterest(List<InputModel> data, double annualInterestRate, List<InterestModel>? InterestRates = null)
     {
         List<OutputModel> results = [];
         double dailyInterestRate = annualInterestRate / 365;
@@ -150,6 +219,8 @@ abstract class Program
             {
                 DateTime nextDate = currentDate.AddMonths(1);
                 double numberOfDays = (nextDate - currentDate).TotalDays;
+
+                dailyInterestRate = FindDailyInterestRate(InterestRates, currentDate, dailyInterestRate);
                 double accruedInterest = amount * dailyInterestRate * numberOfDays;
 
                 amount += accruedInterest;
@@ -167,6 +238,25 @@ abstract class Program
         return results;
     }
 
+    private static double FindDailyInterestRate(List<InterestModel>? interests, DateTime currentDate, double defaultValue = 0)
+    {
+        if(interests == null)
+            return defaultValue;
+
+        double ret = defaultValue;
+        foreach (var interest in interests)
+        {
+            if (interest.Date <= currentDate)
+            {
+                ret = interest.Amount;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return ret / 365;
+    }
 
     static void SaveData(string filePath, List<OutputModel> results)
     {
